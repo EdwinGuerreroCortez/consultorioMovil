@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { View, StyleSheet, Image, Animated } from "react-native";
+import { View, StyleSheet, Image, Animated, Text } from "react-native";
 import { Link, useRouter } from "expo-router";
 import { TextInput, Button } from "react-native-paper";
 
@@ -15,6 +15,10 @@ export default function LoginScreen() {
   const [password, setPassword] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
 
+  // Errores
+  const [emailError, setEmailError] = React.useState("");
+  const [passwordError, setPasswordError] = React.useState("");
+
   useEffect(() => {
     Animated.parallel([
       Animated.timing(cardSlideAnim, {
@@ -29,6 +33,31 @@ export default function LoginScreen() {
       }),
     ]).start();
   }, []);
+
+  // Validación de correo
+  const validateEmail = (text: string) => {
+    setEmail(text);
+    const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!text) {
+      setEmailError("El correo es obligatorio.");
+    } else if (!regex.test(text)) {
+      setEmailError("Ingresa un correo válido.");
+    } else {
+      setEmailError("");
+    }
+  };
+
+  // Validación de contraseña
+  const validatePassword = (text: string) => {
+    setPassword(text);
+    if (!text) {
+      setPasswordError("La contraseña es obligatoria.");
+    } else if (text.length < 3) {
+      setPasswordError("Debe tener al menos 3 caracteres.");
+    } else {
+      setPasswordError("");
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -53,46 +82,49 @@ export default function LoginScreen() {
           <TextInput
             label="Correo electrónico"
             value={email}
-            onChangeText={setEmail}
+            onChangeText={validateEmail}
             mode="outlined"
-            outlineColor="#002BFF"
-            activeOutlineColor="#002BFF"
+            outlineColor={emailError ? "red" : "#002BFF"}
+            activeOutlineColor={emailError ? "red" : "#002BFF"}
+            error={!!emailError}
             style={[styles.input, { height: 60 }]}
             contentStyle={{
               fontSize: 18,
               paddingVertical: 10,
-              color: "#000", // texto en negro
+              color: "#000",
             }}
             theme={{
               roundness: 12,
               fonts: { regular: { fontFamily: "PoppinsRegular" } },
               colors: {
-                onSurfaceVariant: "#888", // gris cuando está vacío
-                primary: "#002BFF",        // azul cuando sube o enfocado
+                error: "red",
+                primary: emailError ? "red" : "#002BFF",
               },
             }}
           />
+          {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
 
           <TextInput
             label="Contraseña"
             value={password}
-            onChangeText={setPassword}
+            onChangeText={validatePassword}
             secureTextEntry={!showPassword}
             mode="outlined"
-            outlineColor="#0901F5"
-            activeOutlineColor="#0901F5"
+            outlineColor={passwordError ? "red" : "#0901F5"}
+            activeOutlineColor={passwordError ? "red" : "#0901F5"}
+            error={!!passwordError}
             style={[styles.input, { height: 60 }]}
             contentStyle={{
               fontSize: 18,
               paddingVertical: 10,
-              color: "#000", // texto en negro
+              color: "#000",
             }}
             theme={{
               roundness: 12,
               fonts: { regular: { fontFamily: "PoppinsRegular" } },
               colors: {
-                onSurfaceVariant: "#888",  // gris cuando está vacío
-                primary: "#0901F5",        // azul cuando sube o enfocado
+                error: "red",
+                primary: passwordError ? "red" : "#0901F5",
               },
             }}
             right={
@@ -103,13 +135,23 @@ export default function LoginScreen() {
               />
             }
           />
+          {passwordError ? (
+            <Text style={styles.errorText}>{passwordError}</Text>
+          ) : null}
         </Animated.View>
 
         {/* Botón */}
         <Animated.View style={{ opacity: fadeAnim, width: "100%" }}>
           <Button
             mode="contained"
-            onPress={() => router.replace("/(tabs)")}
+            onPress={() => {
+              if (!emailError && !passwordError && email && password) {
+                router.replace("/(tabs)");
+              } else {
+                validateEmail(email);
+                validatePassword(password);
+              }
+            }}
             style={styles.button}
             labelStyle={styles.buttonText}
           >
@@ -175,7 +217,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   input: {
-    marginBottom: 15,
+    marginBottom: 10,
     backgroundColor: "#FFFFFF",
   },
   button: {
@@ -200,5 +242,11 @@ const styles = StyleSheet.create({
     padding: 5,
     fontFamily: "PoppinsRegular",
     textAlign: "center",
+  },
+  errorText: {
+    color: "red",
+    fontSize: 13,
+    marginBottom: 5,
+    fontFamily: "PoppinsRegular",
   },
 });
