@@ -1,6 +1,7 @@
 import React from "react";
 import { View, ActivityIndicator } from "react-native";
 import { Stack } from "expo-router";
+import { Provider as PaperProvider } from "react-native-paper"; // ⬅️ IMPORTANTE
 import {
   useFonts,
   Poppins_400Regular,
@@ -32,14 +33,16 @@ export default function RootLayout() {
     );
   }
 
-  // Layout principal
+  // Layout principal envuelto en PaperProvider
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      {/* Flujo de autenticación */}
-      <Stack.Screen name="(auth)" />
+    <PaperProvider>
+      <Stack screenOptions={{ headerShown: false }}>
+        {/* Flujo de autenticación */}
+        <Stack.Screen name="(auth)" />
 
-      {/* Tabs principales (después de login) */}
-      <Stack.Screen name="(tabs)" />
-    </Stack>
+        {/* Tabs principales (después de login) */}
+        <Stack.Screen name="(tabs)" />
+      </Stack>
+    </PaperProvider>
   );
 }
