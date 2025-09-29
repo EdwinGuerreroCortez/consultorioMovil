@@ -1,12 +1,14 @@
 import React from "react";
 import { View, ActivityIndicator } from "react-native";
 import { Stack } from "expo-router";
+import { Provider as PaperProvider } from "react-native-paper";
 import {
   useFonts,
   Poppins_400Regular,
   Poppins_600SemiBold,
   Poppins_700Bold,
 } from "@expo-google-fonts/poppins";
+import { useAuth } from "@/hooks/useAuth"; // ⬅️ Importa tu hook personalizado
 
 export default function RootLayout() {
   // Cargar las fuentes
@@ -16,8 +18,11 @@ export default function RootLayout() {
     PoppinsBold: Poppins_700Bold,
   });
 
-  // Mientras cargan las fuentes muestra loader
-  if (!fontsLoaded) {
+  // Estado de autenticación
+  const { usuario, cargando } = useAuth();
+
+  // Mientras cargan las fuentes o la autenticación
+  if (!fontsLoaded || cargando) {
     return (
       <View
         style={{
@@ -32,14 +37,17 @@ export default function RootLayout() {
     );
   }
 
-  // Layout principal
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      {/* Flujo de autenticación */}
-      <Stack.Screen name="(auth)" />
-
-      {/* Tabs principales (después de login) */}
-      <Stack.Screen name="(tabs)" />
-    </Stack>
+    <PaperProvider>
+      <Stack screenOptions={{ headerShown: false }}>
+        {usuario ? (
+          // Si hay sesión, va a tabs
+          <Stack.Screen name="(tabs)" />
+        ) : (
+          // Si no hay sesión, va a login/registro
+          <Stack.Screen name="(auth)" />
+        )}
+      </Stack>
+    </PaperProvider>
   );
 }
