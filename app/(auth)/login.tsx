@@ -1,7 +1,8 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { View, StyleSheet, Image, Animated, Text } from "react-native";
 import { Link, useRouter } from "expo-router";
-import { TextInput, Button } from "react-native-paper";
+import { TextInput, Button, Snackbar } from "react-native-paper"; // ⬅️ Snackbar
+import { guardarToken, verificarSesion } from "@/services/authService";
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -11,13 +12,18 @@ export default function LoginScreen() {
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   // Estados
-  const [email, setEmail] = React.useState("");
-  const [password, setPassword] = React.useState("");
-  const [showPassword, setShowPassword] = React.useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   // Errores
-  const [emailError, setEmailError] = React.useState("");
-  const [passwordError, setPasswordError] = React.useState("");
+  const [emailError, setEmailError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+
+  // Snackbar (alertas bonitas)
+  const [snackbarVisible, setSnackbarVisible] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState("");
+  const [snackbarColor, setSnackbarColor] = useState("#333");
 
   useEffect(() => {
     Animated.parallel([
@@ -56,6 +62,55 @@ export default function LoginScreen() {
       setPasswordError("Debe tener al menos 3 caracteres.");
     } else {
       setPasswordError("");
+    }
+  };
+
+  // 🔹 Mostrar alerta
+  const showSnackbar = (message: string, color: string = "#333") => {
+    setSnackbarMessage(message);
+    setSnackbarColor(color);
+    setSnackbarVisible(true);
+  };
+
+  // 🔹 Lógica de login
+  const handleLogin = async () => {
+    if (!email) setEmailError("El correo es obligatorio.");
+    if (!password) setPasswordError("La contraseña es obligatoria.");
+    if (emailError || passwordError || !email || !password) return;
+
+    try {
+      const resp = await fetch("https://backenddent.onrender.com/api/usuarios/login-movil", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json();
+        showSnackbar(err.mensaje || "Credenciales inválidas", "#D32F2F"); // 🔴 Error
+        return;
+      }
+
+      const data = await resp.json();
+      if (!data.token) {
+        showSnackbar("El servidor no devolvió token", "#D32F2F");
+        return;
+      }
+
+      await guardarToken(data.token);
+
+      const usuario = await verificarSesion();
+      if (usuario) {
+        showSnackbar("Inicio de sesión exitoso", "#2E7D32"); //  Éxito
+        setTimeout(() => {
+          router.replace("/(tabs)");
+        }, 1200); // Espera un poco para mostrar el mensaje
+      } else {
+        showSnackbar("No se pudo verificar la sesión", "#D32F2F");
+      }
+    } catch (e) {
+      console.error("Error login:", e);
+      showSnackbar("No se pudo conectar con el servidor", "#D32F2F");
     }
   };
 
@@ -102,7 +157,9 @@ export default function LoginScreen() {
               },
             }}
           />
-          {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
+          {emailError ? (
+            <Text style={styles.errorText}>{emailError}</Text>
+          ) : null}
 
           <TextInput
             label="Contraseña"
@@ -144,14 +201,7 @@ export default function LoginScreen() {
         <Animated.View style={{ opacity: fadeAnim, width: "100%" }}>
           <Button
             mode="contained"
-            onPress={() => {
-              if (!emailError && !passwordError && email && password) {
-                router.replace("/(tabs)");
-              } else {
-                validateEmail(email);
-                validatePassword(password);
-              }
-            }}
+            onPress={handleLogin}
             style={styles.button}
             labelStyle={styles.buttonText}
           >
@@ -169,6 +219,24 @@ export default function LoginScreen() {
           </Link>
         </Animated.View>
       </Animated.View>
+
+      {/* Snackbar */}
+      <Snackbar
+  visible={snackbarVisible}
+  onDismiss={() => setSnackbarVisible(false)}
+  duration={2000}
+  style={{ backgroundColor: snackbarColor }}
+  action={{
+    label: "OK",
+    textColor: "#fff", // botón en blanco
+    onPress: () => setSnackbarVisible(false),
+  }}
+>
+  <Text style={{ color: "#fff", fontFamily: "PoppinsSemiBold" }}>
+    {snackbarMessage}
+  </Text>
+</Snackbar>
+
     </View>
   );
 }
