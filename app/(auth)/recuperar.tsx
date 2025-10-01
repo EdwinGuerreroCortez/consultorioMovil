@@ -1,11 +1,13 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View, StyleSheet, Image, Animated, Text } from "react-native";
-import { TextInput, Button, Snackbar } from "react-native-paper";
+import { TextInput, Button, Snackbar, Provider } from "react-native-paper";
 import { Link, useRouter } from "expo-router";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import { useApi } from "@/hooks/useApi";
 
 export default function Recuperar() {
   const router = useRouter();
+  const { fetchWithCsrf } = useApi();
 
   // Animaciones
   const cardSlideAnim = useRef(new Animated.Value(500)).current;
@@ -14,9 +16,14 @@ export default function Recuperar() {
   // Estados
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState("");
-  const [snackbarVisible, setSnackbarVisible] = useState(false);
-  const [snackbarMessage, setSnackbarMessage] = useState("");
-  const [snackbarColor, setSnackbarColor] = useState("#333");
+  const [loading, setLoading] = useState(false);
+
+  // Snackbar
+  const [alert, setAlert] = useState({
+    visible: false,
+    message: "",
+    severity: "" as "success" | "error" | "",
+  });
 
   useEffect(() => {
     Animated.parallel([
@@ -33,7 +40,7 @@ export default function Recuperar() {
     ]).start();
   }, []);
 
-  // 🔹 Validación en tiempo real
+  // Validación en tiempo real
   const validateEmail = (text: string) => {
     setEmail(text);
     const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -46,128 +53,168 @@ export default function Recuperar() {
     }
   };
 
-  // 🔹 Mostrar alerta
-  const showSnackbar = (message: string, color: string = "#333") => {
-    setSnackbarMessage(message);
-    setSnackbarColor(color);
-    setSnackbarVisible(true);
-  };
-
-  // 🔹 Acción al presionar "Enviar instrucciones"
-  const handleSend = () => {
+  // Manejar envío al backend
+  const handleSubmit = async () => {
     if (!email || emailError) {
       setEmailError("Ingresa un correo válido.");
-      showSnackbar("Correo inválido, revisa el formato.", "#D32F2F"); //  error
+      setAlert({
+        visible: true,
+        message: "Correo inválido, revisa el formato.",
+        severity: "error",
+      });
       return;
     }
 
-    // 🔹 Aquí en el futuro irá la llamada al backend
-    // por ahora simulamos éxito:
-    showSnackbar("Se enviaron las instrucciones a tu correo.", "#2E7D32"); //  éxito
+    try {
+      setLoading(true);
 
-    // Ejemplo: luego podrías navegar
-    setTimeout(() => {
-      router.push("/(auth)/cambiarPassword");
-    }, 1500);
+      const payload = { email };
+
+      const { ok, status, data } = await fetchWithCsrf(
+        "/api/usuarios/recuperar-password",
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }
+      );
+
+      console.log("Respuesta recuperar:", { ok, status, data });
+
+      if (ok) {
+        setAlert({
+          visible: true,
+          message: "Se enviaron las instrucciones a tu correo.",
+          severity: "success",
+        });
+        setTimeout(() => router.push("/(auth)/cambiarPassword"), 2000);
+      } else {
+        let msg = "Error al procesar la solicitud.";
+        if (status === 404) msg = "Correo no registrado.";
+        else if (status === 400) msg = data?.mensaje || msg;
+        setAlert({
+          visible: true,
+          message: msg,
+          severity: "error",
+        });
+      }
+    } catch (err) {
+      console.error("Error en recuperación:", err);
+      setAlert({
+        visible: true,
+        message: "Error de conexión. Intenta más tarde.",
+        severity: "error",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <View style={styles.container}>
-      {/* Logo */}
-      <Animated.View style={[styles.logoContainer, { opacity: fadeAnim }]}>
-        <Image
-          source={require("@/assets/images/Logo.png")}
-          style={styles.logo}
-        />
-      </Animated.View>
-
-      {/* Card */}
-      <Animated.View
-        style={[styles.card, { transform: [{ translateY: cardSlideAnim }] }]}
-      >
-        <KeyboardAwareScrollView
-          contentContainerStyle={{ flexGrow: 1 }}
-          enableOnAndroid={true}
-          extraScrollHeight={40}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* Título */}
-          <Animated.Text style={[styles.title, { opacity: fadeAnim }]}>
-            Recuperar Contraseña
-          </Animated.Text>
-
-          {/* Subtítulo */}
-          <Text style={styles.subtitle}>
-            Introduce el correo electrónico de la cuenta que deseas recuperar
-          </Text>
-
-          {/* Input con validación */}
-          <TextInput
-            label="Correo electrónico"
-            value={email}
-            onChangeText={validateEmail}
-            mode="outlined"
-            outlineColor={emailError ? "red" : "#002BFF"}
-            activeOutlineColor={emailError ? "red" : "#002BFF"}
-            style={styles.input}
-            left={<TextInput.Icon icon="email" color="#002BFF" />}
-            error={!!emailError}
-            textColor="#000"
-            theme={{
-              roundness: 12,
-              fonts: { regular: { fontFamily: "PoppinsRegular" } },
-              colors: {
-                primary: "#002BFF",
-                placeholder: "#555",
-                error: "red",
-              },
-            }}
-            contentStyle={{
-              fontSize: 18,
-              fontFamily: "PoppinsRegular",
-              color: "#000",
-            }}
+    <Provider>
+      <View style={styles.container}>
+        {/* Logo */}
+        <Animated.View style={[styles.logoContainer, { opacity: fadeAnim }]}>
+          <Image
+            source={require("@/assets/images/Logo.png")}
+            style={styles.logo}
           />
+        </Animated.View>
 
-          {/* Error debajo del input */}
-          {emailError ? (
-            <Text style={styles.errorText}>{emailError}</Text>
-          ) : null}
-
-          {/* Botón */}
-          <Button
-            mode="contained"
-            style={styles.button}
-            labelStyle={styles.buttonText}
-            onPress={handleSend}
+        {/* Card */}
+        <Animated.View
+          style={[styles.card, { transform: [{ translateY: cardSlideAnim }] }]}
+        >
+          <KeyboardAwareScrollView
+            contentContainerStyle={{ flexGrow: 1 }}
+            enableOnAndroid={true}
+            extraScrollHeight={40}
+            keyboardShouldPersistTaps="handled"
           >
-            Enviar instrucciones
-          </Button>
+            {/* Título */}
+            <Animated.Text style={[styles.title, { opacity: fadeAnim }]}>
+              Recuperar Contraseña
+            </Animated.Text>
 
-          {/* Link */}
-          <Link href="/(auth)/login" style={styles.link}>
-            ¿Ya tienes una cuenta?
-          </Link>
-        </KeyboardAwareScrollView>
-      </Animated.View>
+            {/* Subtítulo */}
+            <Text style={styles.subtitle}>
+              Introduce el correo electrónico de la cuenta que deseas recuperar
+            </Text>
 
-      {/* Snackbar */}
-      <Snackbar
-        visible={snackbarVisible}
-        onDismiss={() => setSnackbarVisible(false)}
-        duration={2500}
-        style={{ backgroundColor: snackbarColor }}
-        action={{
-          label: "OK",
-          textColor: "#fff",
-          onPress: () => setSnackbarVisible(false),
-        }}
-      >
-        <Text style={{ color: "#fff", fontFamily: "PoppinsSemiBold" }}>
-          {snackbarMessage}
-        </Text>
-      </Snackbar>
-    </View>
+            {/* Input */}
+            <TextInput
+              label="Correo electrónico"
+              value={email}
+              onChangeText={validateEmail}
+              mode="outlined"
+              outlineColor={emailError ? "red" : "#002BFF"}
+              activeOutlineColor={emailError ? "red" : "#002BFF"}
+              style={styles.input}
+              left={<TextInput.Icon icon="email" color="#002BFF" />}
+              error={!!emailError}
+              textColor="#000"
+              theme={{
+                roundness: 12,
+                fonts: { regular: { fontFamily: "PoppinsRegular" } },
+                colors: {
+                  primary: "#002BFF",
+                  placeholder: "#555",
+                  error: "red",
+                },
+              }}
+              contentStyle={{
+                fontSize: 18,
+                fontFamily: "PoppinsRegular",
+                color: "#000",
+              }}
+            />
+            {emailError ? (
+              <Text style={styles.errorText}>{emailError}</Text>
+            ) : null}
+
+            {/* Botón */}
+            <Button
+              mode="contained"
+              style={styles.button}
+              labelStyle={styles.buttonText}
+              onPress={handleSubmit}
+              loading={loading}
+              disabled={loading}
+            >
+              {loading ? "Enviando..." : "Enviar instrucciones"}
+            </Button>
+
+            {/* Link */}
+            <Link href="/(auth)/login" style={styles.link}>
+              ¿Ya tienes una cuenta?
+            </Link>
+          </KeyboardAwareScrollView>
+        </Animated.View>
+
+        {/* Snackbar */}
+        <Snackbar
+          visible={alert.visible}
+          onDismiss={() => setAlert({ ...alert, visible: false })}
+          duration={4000}
+          style={{
+            backgroundColor:
+              alert.severity === "success"
+                ? "#4CAF50"
+                : alert.severity === "error"
+                ? "#F44336"
+                : "#333",
+          }}
+          action={{
+            label: "OK",
+            textColor: "#fff",
+            onPress: () => setAlert({ ...alert, visible: false }),
+          }}
+        >
+          <Text style={{ color: "#fff", fontFamily: "PoppinsSemiBold" }}>
+            {alert.message}
+          </Text>
+        </Snackbar>
+      </View>
+    </Provider>
   );
 }
 
