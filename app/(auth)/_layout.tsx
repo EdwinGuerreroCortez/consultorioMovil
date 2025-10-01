@@ -7,6 +7,8 @@ export default function AuthLayout() {
       <Stack.Screen name="registroCuenta" />
       <Stack.Screen name="recuperar" />
       <Stack.Screen name="cambiarPassword" />
+      <Stack.Screen name="registroCredenciales" />
+      <Stack.Screen name="registroVerificacion" />
     </Stack>
   );
 }
