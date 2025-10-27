@@ -1,0 +1,46 @@
+name: CI/CD Mobile Android
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1) Descargar el código del repo
+      - name: Checkout del repositorio
+        uses: actions/checkout@v3
+
+      # 2) Configurar Node (Expo necesita Node)
+      - name: Configurar Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      # 3) Instalar dependencias bloqueadas (reproducible)
+      - name: Instalar dependencias
+        run: npm ci
+
+      # 4) Ejecutar pruebas unitarias (Jest / lógica de negocio)
+      - name: Ejecutar pruebas unitarias
+        run: npm test
+
+      # 5) Autenticarse en Expo usando secrets
+      - name: Login en Expo
+        run: npx expo login -u ${{ secrets.EXPO_USERNAME }} -p ${{ secrets.EXPO_PASSWORD }}
+
+      # 6) Generar la build Android con EAS usando el perfil "preview"
+      #    Ese perfil ya existe en TU eas.json
+      - name: Generar build Android (preview)
+        run: npx eas build --platform android --profile preview --non-interactive --output build/app-preview.apk
+
+      # 7) Publicar la APK resultante como artifact descargable
+      - name: Publicar APK como artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: app-mobile-preview-apk
+          path: build/app-preview.apk
