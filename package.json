@@ -8,7 +8,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "test": "jest"
   },
   "dependencies": {
     "@expo-google-fonts/poppins": "^0.4.1",
@@ -55,6 +56,7 @@
     "@types/react-native-vector-icons": "^6.4.18",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",
+    "jest": "^30.2.0",
     "typescript": "~5.9.2"
   },
   "private": true
