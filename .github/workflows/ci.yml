@@ -7,7 +7,7 @@ on:
     branches: [ develop ]
 
 jobs:
-  build_android:
+  test_and_build_mobile:
     runs-on: ubuntu-latest
 
     steps:
@@ -29,16 +29,6 @@ jobs:
       - name: Run tests (Jest)
         run: npm test
 
-      # 5. Construir APK debug (React Native CLI / Gradle)
-      - name: Build Android APK (debug)
-        run: |
-          cd android
-          ./gradlew assembleDebug
-          cd ..
-
-      # 6. Subir el APK como artifact
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+      # 5. Build del proyecto (sin Gradle, sin carpeta android)
+      - name: Build JS bundle (Expo)
+        run: npm run build
