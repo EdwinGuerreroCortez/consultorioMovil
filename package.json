@@ -9,7 +9,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "jest"
+    "test": "jest --runInBand"
   },
   "dependencies": {
     "@expo-google-fonts/poppins": "^0.4.1",
