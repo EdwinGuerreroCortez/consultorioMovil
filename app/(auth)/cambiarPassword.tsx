@@ -3,7 +3,7 @@ import { View, StyleSheet, Image, Animated, Text } from "react-native";
 import { TextInput, Button, Snackbar, Provider } from "react-native-paper";
 import { useRouter } from "expo-router";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
-import PasswordStrengthMeterBar from "react-native-password-strength-meter-bar";
+import PasswordStrengthMeterBar from "@/components/PasswordStrengthBar";
 import { useApi } from "@/hooks/useApi";
 
 export default function CambiarPassword() {
@@ -204,7 +204,7 @@ export default function CambiarPassword() {
                   icon={showPassword ? "eye-off" : "eye"}
                   onPress={() => setShowPassword(!showPassword)}
                   forceTextInputFocus={false}
-                  
+
                 />
               }
               theme={{
@@ -235,7 +235,7 @@ export default function CambiarPassword() {
                   icon={showPassword ? "eye-off" : "eye"}
                   onPress={() => setShowPassword(!showPassword)}
                   forceTextInputFocus={false}
-                  
+
                 />
               }
               theme={{
@@ -295,8 +295,8 @@ export default function CambiarPassword() {
               alert.severity === "success"
                 ? "#4CAF50"
                 : alert.severity === "error"
-                ? "#F44336"
-                : "#333",
+                  ? "#F44336"
+                  : "#333",
           }}
           action={{
             label: "OK",

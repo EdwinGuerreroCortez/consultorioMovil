@@ -8,8 +8,8 @@ import {
 } from "react-native";
 import { TextInput, Button, Provider, Snackbar } from "react-native-paper";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import PasswordStrengthMeterBar from "react-native-password-strength-meter-bar";
-import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view"; 
+import PasswordStrengthBar from "@/components/PasswordStrengthBar";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import { useApi } from "@/hooks/useApi";
 
 export default function RegistroCredenciales() {
@@ -299,7 +299,7 @@ export default function RegistroCredenciales() {
 
             {/* Barra de fuerza */}
             {password ? (
-              <PasswordStrengthMeterBar
+              <PasswordStrengthBar
                 password={password}
                 showLabel
                 labelVisible
@@ -351,8 +351,8 @@ export default function RegistroCredenciales() {
               alert.severity === "success"
                 ? "green"
                 : alert.message.includes("registrado")
-                ? "orange"
-                : "red",
+                  ? "orange"
+                  : "red",
           }}
         >
           <Text style={{ color: "#fff", fontFamily: "PoppinsSemiBold" }}>
