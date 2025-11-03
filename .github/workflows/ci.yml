@@ -20,10 +20,41 @@ jobs:
           node-version: 18
 
       - name: Install dependencies
-        run: npm install
+        run: npm install --legacy-peer-deps
 
       - name: Run tests (Jest)
-        run: npm test
+        run: npm test -- --forceExit --detectOpenHandles
 
-      - name: Build JS bundle (Expo)
-        run: npm run build
+      # Configurar Java y Android SDK
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      # Construir el APK con Expo + Gradle
+      - name: Build APK
+        run: |
+          npx expo prebuild --platform android
+          cd android
+          chmod +x ./gradlew
+          ./gradlew assembleRelease
+        env:
+          EXPO_NO_TELEMETRY: 1
+
+      #  Subir el APK como artifact descargable
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release
+          path: android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 30
+
+      #  Mostrar link directo al APK en los logs
+      - name: Show download link
+        run: |
+          echo " APK disponible en:"
+          echo "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
