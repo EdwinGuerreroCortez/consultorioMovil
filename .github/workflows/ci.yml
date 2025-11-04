@@ -10,6 +10,11 @@ jobs:
   test_and_build_mobile:
     runs-on: ubuntu-latest
 
+    env:
+      API_BASE_URL: ${{ secrets.API_BASE_URL }}
+      TEST_USER_EMAIL: ${{ secrets.MOBILE_TEST_USER_EMAIL }}
+      TEST_USER_PASSWORD: ${{ secrets.MOBILE_TEST_USER_PASSWORD }}
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
