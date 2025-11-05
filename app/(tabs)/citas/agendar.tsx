@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useMemo } from "react";
+import React, { useRef, useEffect, useState, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -7,16 +7,11 @@ import {
   TouchableOpacity,
   Alert,
   ScrollView,
+  ActivityIndicator,
 } from "react-native";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
-
-const SERVICES = [
-  { id: 1, name: "Limpieza dental" },
-  { id: 2, name: "Ortodoncia" },
-  { id: 3, name: "Extracción" },
-  { id: 4, name: "Revisión general" },
-  // aquí luego puedes agregar muchos más, el dropdown será scrollable
-];
+import { verificarSesion } from "@/services/authService";
+import { useApi } from "@/hooks/useApi";
 
 const WEEKDAY_HOURS = [
   "09:00",
@@ -31,14 +26,7 @@ const WEEKDAY_HOURS = [
   "19:00",
 ];
 
-const WEEKEND_HOURS = [
-  "09:00",
-  "10:00",
-  "11:00",
-  "12:00",
-  "13:00",
-  "14:00",
-];
+const WEEKEND_HOURS = ["09:00", "10:00", "11:00", "12:00", "13:00", "14:00"];
 
 const WEEK_DAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 const MONTHS = [
@@ -56,10 +44,31 @@ const MONTHS = [
   "Diciembre",
 ];
 
+interface Tratamiento {
+  id: number;
+  nombre: string;
+  precio: number;
+  requiere_evaluacion: boolean;
+  estado: number;
+  citas_requeridas?: number;
+}
+
+interface CitaOcupada {
+  fecha_hora: string;
+  hora_formateada: string; // "HH:MM"
+  [key: string]: any;
+}
+
 export default function AgendarCita() {
   const cardSlideAnim = useRef(new Animated.Value(500)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
+  const { fetchWithCsrf, csrfToken } = useApi();
+
+  const [usuarioId, setUsuarioId] = useState<number | null>(null);
+  const [tratamientoActivo, setTratamientoActivo] = useState(false);
+
+  const [servicios, setServicios] = useState<Tratamiento[]>([]);
   const [selectedService, setSelectedService] = useState<string | null>(null);
   const [serviceDropdownOpen, setServiceDropdownOpen] = useState(false);
 
@@ -69,10 +78,53 @@ export default function AgendarCita() {
     return d;
   });
 
-  // ⬇ ahora empieza en null
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedHour, setSelectedHour] = useState<string | null>(null);
 
+  const [citasOcupadas, setCitasOcupadas] = useState<CitaOcupada[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const ultimaFechaConsultada = useRef<string | null>(null);
+  const obtenerCitasOcupadas = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await fetchWithCsrf("/api/citas/activas", {
+        method: "GET",
+      });
+
+      if (!res.ok) {
+        Alert.alert(
+          "Error",
+          "Error al obtener las citas ocupadas. Intenta nuevamente."
+        );
+        return;
+      }
+
+      const citas = res.data || [];
+
+      const formateadas: CitaOcupada[] = citas.map((c: any) => {
+        const fechaUTC = new Date(c.fecha_hora);
+        const horas = fechaUTC.getUTCHours();
+        const minutos = fechaUTC.getUTCMinutes();
+        const horaStr = `${horas.toString().padStart(2, "0")}:${minutos
+          .toString()
+          .padStart(2, "0")}`; // "HH:MM"
+
+        return { ...c, hora_formateada: horaStr };
+      });
+
+      setCitasOcupadas(formateadas);
+    } catch (e) {
+      console.error("Error obteniendo citas ocupadas:", e);
+      Alert.alert(
+        "Error",
+        "No fue posible obtener las citas ocupadas. Inténtalo nuevamente."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchWithCsrf]);
+  // Animaciones
   useEffect(() => {
     Animated.parallel([
       Animated.timing(cardSlideAnim, {
@@ -88,7 +140,49 @@ export default function AgendarCita() {
     ]).start();
   }, []);
 
-  // matriz del calendario (6 filas x 7 columnas, lunes como inicio)
+  // Obtener usuario desde token
+  useEffect(() => {
+    const obtenerUsuario = async () => {
+      try {
+        const usuario = await verificarSesion();
+        if (usuario?.id) {
+          setUsuarioId(usuario.id);
+        } else {
+          Alert.alert(
+            "Sesión",
+            "No se encontró la sesión del usuario. Inicia sesión nuevamente."
+          );
+        }
+      } catch (e) {
+        console.error("Error verificando sesión:", e);
+        Alert.alert(
+          "Error",
+          "Error al verificar la sesión. Intenta nuevamente."
+        );
+      }
+    };
+    obtenerUsuario();
+  }, []);
+
+  // Cuando ya tenemos usuario + CSRF → verificar tratamiento y cargar servicios
+  useEffect(() => {
+    if (!usuarioId || !csrfToken) return;
+    verificarTratamientoActivo();
+    obtenerTratamientos();
+  }, [usuarioId, csrfToken]);
+
+  // Cuando se selecciona una fecha → obtener citas ocupadas (si no se han consultado ya)
+  useEffect(() => {
+    if (!selectedDate || !csrfToken) return;
+    const fechaClave = selectedDate.toISOString().split("T")[0];
+
+    if (ultimaFechaConsultada.current === fechaClave) return;
+
+    ultimaFechaConsultada.current = fechaClave;
+    obtenerCitasOcupadas();
+  }, [selectedDate, csrfToken, obtenerCitasOcupadas]);
+
+  // Matriz del calendario (6 filas x 7 columnas, lunes como inicio)
   const calendarMatrix = useMemo(() => {
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth();
@@ -119,8 +213,8 @@ export default function AgendarCita() {
     a.getMonth() === b.getMonth() &&
     a.getDate() === b.getDate();
 
-  // horas según día (simulado)
-  const hoursForSelectedDate = useMemo(() => {
+  // Horas base según día (sin considerar ocupadas)
+  const baseHoursForSelectedDate = useMemo(() => {
     if (!selectedDate) return [];
     const day = selectedDate.getDay(); // 0=Domingo, 6=Sábado
 
@@ -134,6 +228,97 @@ export default function AgendarCita() {
     return WEEKDAY_HOURS;
   }, [selectedDate]);
 
+  // Horas marcadas como ocupadas según citas de backend
+  const hoursWithAvailability = useMemo(() => {
+    if (!selectedDate) return [];
+
+    const fechaSeleccionadaISO = selectedDate
+      .toISOString()
+      .split("T")[0];
+
+    const horasOcupadas = citasOcupadas
+      .filter((cita) => {
+        const fechaCitaISO = new Date(cita.fecha_hora)
+          .toISOString()
+          .split("T")[0];
+        return fechaCitaISO === fechaSeleccionadaISO;
+      })
+      .map((cita) => cita.hora_formateada); // "HH:MM"
+
+    return baseHoursForSelectedDate.map((h) => ({
+      value: h,
+      isOccupied: horasOcupadas.includes(h),
+    }));
+  }, [selectedDate, baseHoursForSelectedDate, citasOcupadas]);
+
+  // --- Llamadas a API ---
+
+  const verificarTratamientoActivo = useCallback(async () => {
+    if (!usuarioId) return;
+    try {
+      setLoading(true);
+      const res = await fetchWithCsrf(
+        `/api/tratamientos-pacientes/verificar/${usuarioId}`,
+        { method: "GET" }
+      );
+
+      if (!res.ok) {
+        Alert.alert(
+          "Error",
+          "Error al verificar si tienes un tratamiento activo."
+        );
+        return;
+      }
+
+      const tiene = !!res.data?.tieneTratamientoActivo;
+      setTratamientoActivo(tiene);
+
+      if (tiene) {
+        Alert.alert(
+          "Tratamiento activo",
+          "Ya tienes un tratamiento en curso. Debes finalizarlo antes de agendar otra cita."
+        );
+      }
+    } catch (e) {
+      console.error("Error verificando tratamiento activo:", e);
+      Alert.alert(
+        "Error",
+        "Error al verificar el tratamiento activo. Inténtalo nuevamente."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [usuarioId, fetchWithCsrf]);
+
+  const obtenerTratamientos = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await fetchWithCsrf("/api/tratamientos", {
+        method: "GET",
+      });
+
+      if (!res.ok) {
+        Alert.alert("Error", "Error al cargar los tratamientos.");
+        return;
+      }
+
+      const activos: Tratamiento[] = (res.data || []).filter(
+        (t: Tratamiento) => t.estado === 1
+      );
+
+      setServicios(activos);
+    } catch (e) {
+      console.error("Error al obtener tratamientos:", e);
+      Alert.alert("Error", "No fue posible cargar los tratamientos.");
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchWithCsrf]);
+
+
+
+  // --- Navegación de mes ---
+
   const handlePrevMonth = () => {
     const d = new Date(currentMonth);
     d.setMonth(d.getMonth() - 1);
@@ -146,7 +331,17 @@ export default function AgendarCita() {
     setCurrentMonth(d);
   };
 
-  const handleConfirm = () => {
+  // --- Confirmar cita (POST) ---
+
+  const handleConfirm = async () => {
+    if (tratamientoActivo) {
+      Alert.alert(
+        "No puedes agendar",
+        "Ya tienes un tratamiento en curso. Debes finalizarlo antes de agendar otro."
+      );
+      return;
+    }
+
     if (!selectedService || !selectedDate || !selectedHour) {
       Alert.alert(
         "Campos incompletos",
@@ -155,22 +350,114 @@ export default function AgendarCita() {
       return;
     }
 
-    const fechaTexto = `${selectedDate
-      .getDate()
-      .toString()
-      .padStart(2, "0")}/${(selectedDate.getMonth() + 1)
-        .toString()
-        .padStart(2, "0")}/${selectedDate.getFullYear()}`;
+    const servicio = servicios.find((s) => s.nombre === selectedService);
+    if (!servicio) {
+      Alert.alert(
+        "Error",
+        "No se encontró la información del servicio seleccionado."
+      );
+      return;
+    }
 
-    Alert.alert(
-      "Cita simulada",
-      `Servicio: ${selectedService}\nFecha: ${fechaTexto}\nHora: ${selectedHour}`
+    const hourObj = hoursWithAvailability.find(
+      (h) => h.value === selectedHour
     );
+    if (hourObj?.isOccupied) {
+      Alert.alert(
+        "Hora ocupada",
+        "Esta hora ya está ocupada. Por favor, selecciona otra."
+      );
+      return;
+    }
+
+    if (!usuarioId) {
+      Alert.alert("Error", "No se encontró el usuario. Inicia sesión de nuevo.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const fechaISO = selectedDate.toISOString().split("T")[0]; // YYYY-MM-DD
+      const [horaStr, minutoStr] = selectedHour.split(":");
+      const horaNum = parseInt(horaStr, 10);
+      const minutoNum = parseInt(minutoStr, 10);
+
+      // Fecha/hora local
+      const fechaHoraLocal = new Date(
+        `${fechaISO}T${horaNum.toString().padStart(2, "0")}:${minutoNum
+          .toString()
+          .padStart(2, "0")}:00`
+      );
+
+      // Convertir a UTC como en el web
+      const fechaHoraUTC = new Date(
+        fechaHoraLocal.getTime() -
+        fechaHoraLocal.getTimezoneOffset() * 60000
+      );
+
+      const estadoTratamiento = servicio.requiere_evaluacion
+        ? "pendiente"
+        : "en progreso";
+
+      const res = await fetchWithCsrf("/api/tratamientos-pacientes/crear", {
+        method: "POST",
+        body: JSON.stringify({
+          usuarioId,
+          tratamientoId: servicio.id,
+          citasTotales: servicio.citas_requeridas || 0,
+          fechaInicio: fechaHoraUTC.toISOString(),
+          estado: estadoTratamiento,
+          precio: servicio.precio,
+          requiereEvaluacion: servicio.requiere_evaluacion,
+        }),
+      });
+
+      if (!res.ok) {
+        console.error("Respuesta error crear tratamiento:", res);
+        Alert.alert(
+          "Error",
+          "Error al agendar la cita. Inténtalo nuevamente."
+        );
+        return;
+      }
+
+      Alert.alert(
+        "Cita agendada",
+        servicio.requiere_evaluacion
+          ? "Tratamiento creado correctamente, pendiente de valoración."
+          : "Tratamiento, citas y pagos creados correctamente."
+      );
+      // ✅ Actualiza inmediatamente el estado para que el aviso se muestre sin reiniciar
+      setTratamientoActivo(true);
+
+      // ✅ (Opcional pero recomendable): vuelve a verificar con el backend por si cambia algo
+      await verificarTratamientoActivo();
+
+      // Reseteamos selección
+      setSelectedService(null);
+      setSelectedDate(null);
+      setSelectedHour(null);
+      ultimaFechaConsultada.current = null;
+      // Podríamos volver a cargar citas ocupadas si quieres
+      // obtenerCitasOcupadas();
+    } catch (e) {
+      console.error("Error al agendar la cita:", e);
+      Alert.alert(
+        "Error",
+        "Error al agendar la cita. Inténtalo nuevamente."
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleBack = () => {
     Alert.alert("Atrás", "Aquí podrías navegar a la pantalla anterior.");
   };
+
+  const isNextDisabled =
+    tratamientoActivo || !selectedService || !selectedDate || !selectedHour;
 
   return (
     <View style={styles.container}>
@@ -180,7 +467,28 @@ export default function AgendarCita() {
           { transform: [{ translateY: cardSlideAnim }], opacity: fadeAnim },
         ]}
       >
+        {loading && (
+          <View style={styles.loadingOverlay}>
+            <ActivityIndicator size="large" color="#003087" />
+          </View>
+        )}
+
         <Text style={styles.title}>Agendar cita</Text>
+
+        {tratamientoActivo && (
+          <View style={styles.warningBox}>
+            <Icon
+              name="alert-circle-outline"
+              size={22}
+              color="#D32F2F"
+              style={{ marginRight: 8 }}
+            />
+            <Text style={styles.warningText}>
+              Ya tienes un tratamiento en curso. Debes finalizarlo antes de
+              agendar otra cita.
+            </Text>
+          </View>
+        )}
 
         {/* Contenido principal */}
         <View style={styles.mainContent}>
@@ -191,8 +499,12 @@ export default function AgendarCita() {
             <View>
               <TouchableOpacity
                 style={styles.select}
-                onPress={() => setServiceDropdownOpen((prev) => !prev)}
+                onPress={() =>
+                  !tratamientoActivo &&
+                  setServiceDropdownOpen((prev) => !prev)
+                }
                 activeOpacity={0.8}
+                disabled={tratamientoActivo}
               >
                 <View style={styles.selectLeft}>
                   <View style={styles.iconBox}>
@@ -214,24 +526,23 @@ export default function AgendarCita() {
                 />
               </TouchableOpacity>
 
-              {serviceDropdownOpen && (
+              {serviceDropdownOpen && !tratamientoActivo && (
                 <View style={styles.dropdown}>
-                  {/* Scroll SOLO dentro del desplegable si hay muchos servicios */}
                   <ScrollView
                     style={styles.dropdownScroll}
                     nestedScrollEnabled
                   >
-                    {SERVICES.map((s) => (
+                    {servicios.map((s) => (
                       <TouchableOpacity
                         key={s.id}
                         style={styles.dropdownItem}
                         activeOpacity={0.8}
                         onPress={() => {
-                          setSelectedService(s.name);
+                          setSelectedService(s.nombre);
                           setServiceDropdownOpen(false);
                         }}
                       >
-                        <Text style={styles.dropdownItemText}>{s.name}</Text>
+                        <Text style={styles.dropdownItemText}>{s.nombre}</Text>
                       </TouchableOpacity>
                     ))}
                   </ScrollView>
@@ -248,15 +559,18 @@ export default function AgendarCita() {
                 <TouchableOpacity
                   onPress={handlePrevMonth}
                   style={styles.monthArrow}
+                  disabled={tratamientoActivo}
                 >
                   <Icon name="chevron-left" size={22} color="#003087" />
                 </TouchableOpacity>
                 <Text style={styles.calendarHeaderText}>
-                  {MONTHS[currentMonth.getMonth()]} {currentMonth.getFullYear()}
+                  {MONTHS[currentMonth.getMonth()]}{" "}
+                  {currentMonth.getFullYear()}
                 </Text>
                 <TouchableOpacity
                   onPress={handleNextMonth}
                   style={styles.monthArrow}
+                  disabled={tratamientoActivo}
                 >
                   <Icon name="chevron-right" size={22} color="#003087" />
                 </TouchableOpacity>
@@ -291,9 +605,11 @@ export default function AgendarCita() {
                         ]}
                         activeOpacity={0.8}
                         onPress={() => {
+                          if (tratamientoActivo) return;
                           setSelectedDate(date);
                           setSelectedHour(null);
                         }}
+                        disabled={tratamientoActivo}
                       >
                         <Text
                           style={[
@@ -319,33 +635,43 @@ export default function AgendarCita() {
                 contentContainerStyle={styles.hoursScrollContent}
                 nestedScrollEnabled
               >
-                {/* ⬇ Lógica actualizada */}
                 {!selectedDate ? (
                   <Text style={styles.noHoursText}>
                     Selecciona una fecha para ver horarios.
                   </Text>
-                ) : hoursForSelectedDate.length === 0 ? (
+                ) : baseHoursForSelectedDate.length === 0 ? (
                   <Text style={styles.noHoursText}>
                     No hay citas disponibles este día.
                   </Text>
                 ) : (
-                  hoursForSelectedDate.map((h) => (
+                  hoursWithAvailability.map((h) => (
                     <TouchableOpacity
-                      key={h}
+                      key={h.value}
                       style={[
                         styles.hourButton,
-                        selectedHour === h && styles.hourButtonSelected,
+                        h.isOccupied && styles.hourButtonOccupied,
+                        selectedHour === h.value &&
+                        !h.isOccupied &&
+                        styles.hourButtonSelected,
                       ]}
                       activeOpacity={0.8}
-                      onPress={() => setSelectedHour(h)}
+                      onPress={() => {
+                        if (h.isOccupied || tratamientoActivo) return;
+                        setSelectedHour(h.value);
+                      }}
+                      disabled={h.isOccupied || tratamientoActivo}
                     >
                       <Text
                         style={[
                           styles.hourText,
-                          selectedHour === h && styles.hourTextSelected,
+                          h.isOccupied && styles.hourTextOccupied,
+                          selectedHour === h.value &&
+                          !h.isOccupied &&
+                          styles.hourTextSelected,
                         ]}
                       >
-                        {h}
+                        {h.value}
+                        {h.isOccupied ? " (Ocupada)" : ""}
                       </Text>
                     </TouchableOpacity>
                   ))
@@ -370,12 +696,11 @@ export default function AgendarCita() {
               style={[
                 styles.button,
                 styles.buttonPrimary,
-                (!selectedService || !selectedDate || !selectedHour) &&
-                styles.buttonDisabled,
+                isNextDisabled && styles.buttonDisabled,
               ]}
               activeOpacity={0.8}
               onPress={handleConfirm}
-              disabled={!selectedService || !selectedDate || !selectedHour}
+              disabled={isNextDisabled}
             >
               <Text style={[styles.buttonText, styles.buttonPrimaryText]}>
                 Siguiente
@@ -406,12 +731,41 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 5,
   },
+  loadingOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "#00000040",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 10,
+    borderTopLeftRadius: 50,
+    borderTopRightRadius: 50,
+  },
   title: {
     fontSize: 24,
     fontFamily: "PoppinsSemiBold",
     marginBottom: 15,
     color: "#000",
     textAlign: "left",
+  },
+  warningBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFEBEE",
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: "#D32F2F",
+  },
+  warningText: {
+    flex: 1,
+    fontSize: 12,
+    color: "#B71C1C",
+    fontFamily: "PoppinsRegular",
   },
   mainContent: {
     flex: 1,
@@ -464,7 +818,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   dropdownScroll: {
-    maxHeight: 200, // scroll si hay muchos servicios
+    maxHeight: 200,
   },
   dropdownItem: {
     paddingHorizontal: 14,
@@ -555,7 +909,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   hoursScroll: {
-    maxHeight: 260, // solo la columna de horas tiene scroll
+    maxHeight: 260,
   },
   hoursScrollContent: {
     paddingBottom: 4,
@@ -577,6 +931,10 @@ const styles = StyleSheet.create({
   hourButtonSelected: {
     backgroundColor: "#2196F3",
   },
+  hourButtonOccupied: {
+    borderColor: "#d32f2f",
+    backgroundColor: "#ffcdd2",
+  },
   hourText: {
     fontSize: 14,
     color: "#2196F3",
@@ -584,6 +942,10 @@ const styles = StyleSheet.create({
   },
   hourTextSelected: {
     color: "#FFFFFF",
+    fontFamily: "PoppinsSemiBold",
+  },
+  hourTextOccupied: {
+    color: "#B71C1C",
     fontFamily: "PoppinsSemiBold",
   },
   buttonsRow: {
