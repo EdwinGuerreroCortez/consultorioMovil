@@ -3,6 +3,8 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useRef } from "react";
 import { View, Text, Image, Vibration, Animated } from "react-native";
 import { Audio } from "expo-av";
+import * as WebBrowser from "expo-web-browser";
+WebBrowser.maybeCompleteAuthSession();
 
 export default function TabLayout() {
   // Animaciones separadas para cada tab
