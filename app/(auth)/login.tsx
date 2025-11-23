@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View, StyleSheet, Image, Animated, Text } from "react-native";
 import { Link, useRouter } from "expo-router";
-import { TextInput, Button, Snackbar } from "react-native-paper"; // ⬅️ Snackbar
+import { TextInput, Button, Snackbar } from "react-native-paper"; //  Snackbar
 import { guardarToken, verificarSesion } from "@/services/authService";
 
 export default function LoginScreen() {
@@ -87,7 +87,7 @@ export default function LoginScreen() {
 
       if (!resp.ok) {
         const err = await resp.json();
-        showSnackbar(err.mensaje || "Credenciales inválidas", "#D32F2F"); // 🔴 Error
+        showSnackbar(err.mensaje || "Credenciales inválidas", "#D32F2F"); // Error
         return;
       }
 
@@ -222,20 +222,20 @@ export default function LoginScreen() {
 
       {/* Snackbar */}
       <Snackbar
-  visible={snackbarVisible}
-  onDismiss={() => setSnackbarVisible(false)}
-  duration={2000}
-  style={{ backgroundColor: snackbarColor }}
-  action={{
-    label: "OK",
-    textColor: "#fff", // botón en blanco
-    onPress: () => setSnackbarVisible(false),
-  }}
->
-  <Text style={{ color: "#fff", fontFamily: "PoppinsSemiBold" }}>
-    {snackbarMessage}
-  </Text>
-</Snackbar>
+        visible={snackbarVisible}
+        onDismiss={() => setSnackbarVisible(false)}
+        duration={2000}
+        style={{ backgroundColor: snackbarColor }}
+        action={{
+          label: "OK",
+          textColor: "#fff", // botón en blanco
+          onPress: () => setSnackbarVisible(false),
+        }}
+      >
+        <Text style={{ color: "#fff", fontFamily: "PoppinsSemiBold" }}>
+          {snackbarMessage}
+        </Text>
+      </Snackbar>
 
     </View>
   );
