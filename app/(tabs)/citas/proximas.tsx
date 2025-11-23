@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from "react";
+import React, { useRef, useEffect, useState, useCallback } from "react";
 import {
   View,
   StyleSheet,
@@ -10,6 +10,7 @@ import {
 import { Text, Chip } from "react-native-paper";
 import axios from "axios";
 import { verificarSesion } from "@/services/authService";
+import { useFocusEffect } from "@react-navigation/native";
 
 interface CitaAPI {
   cita_id: number;
@@ -55,23 +56,9 @@ export default function ProximasCitas() {
   const [citas, setCitas] = useState<CitaPendiente[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(cardSlideAnim, {
-        toValue: 0,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 1000,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, []);
-
-  // Obtener usuario
+  // Obtener usuario una sola vez
   useEffect(() => {
     const obtenerUsuario = async () => {
       try {
@@ -89,14 +76,13 @@ export default function ProximasCitas() {
     obtenerUsuario();
   }, []);
 
-  // Obtener citas (con tratamiento)
+  // Cargar citas (reutilizable)
   useEffect(() => {
     if (!usuarioId) return;
 
     const obtenerCitas = async () => {
       try {
         setLoading(true);
-
 
         const resp = await axios.get<CitaAPI[]>(
           `https://backenddent.onrender.com/api/citas/usuario/detalle/${usuarioId}`
@@ -135,13 +121,11 @@ export default function ProximasCitas() {
               },
             ];
           })
-          // solo mostrar pendientes/confirmadas
           .filter(
             (c) =>
               c.estadoNormalizado === "Pendiente" ||
               c.estadoNormalizado === "Confirmada"
           )
-          // ordenar por fecha + hora visual
           .sort((a, b) => {
             const [da, ma, aa] = a.fecha.split("/").map(Number);
             const [db, mb, ab] = b.fecha.split("/").map(Number);
@@ -161,7 +145,41 @@ export default function ProximasCitas() {
     };
 
     obtenerCitas();
-  }, [usuarioId]);
+  }, [usuarioId, reloadKey]);
+
+  // Reiniciar y recargar cada vez que se enfoca el tab
+  useFocusEffect(
+    useCallback(() => {
+      // Reset visual
+      setError(null);
+      setCitas([]);
+      setLoading(true);
+
+      // Reiniciar animaciones
+      cardSlideAnim.setValue(500);
+      fadeAnim.setValue(0);
+
+      Animated.parallel([
+        Animated.timing(cardSlideAnim, {
+          toValue: 0,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ]).start();
+
+      // Disparar recarga
+      setReloadKey((prev) => prev + 1);
+
+      return () => {
+        // aquí podrías limpiar timers/listeners si algún día los agregas
+      };
+    }, [cardSlideAnim, fadeAnim])
+  );
 
   const getChipStyle = (estado: EstadoNorm) => {
     switch (estado) {
@@ -238,7 +256,6 @@ export default function ProximasCitas() {
               />
             </View>
           </ScrollView>
-
         )}
       </Animated.View>
     </View>
@@ -318,7 +335,6 @@ const styles = StyleSheet.create({
   },
   tableContainer: {
     width: "100%",
-    marginHorizontal: 20,     // hace que la tabla use todo el ancho de la card
+    marginHorizontal: 20,
   },
-
 });

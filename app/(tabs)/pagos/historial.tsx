@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from "react";
+import React, { useRef, useEffect, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -9,7 +9,8 @@ import {
 } from "react-native";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import axios from "axios";
-import { verificarSesion } from "@/services/authService"; // ← ya lo usas en otras pantallas
+import { verificarSesion } from "@/services/authService";
+import { useFocusEffect } from "@react-navigation/native";
 
 export default function HistorialPagos() {
   const cardSlideAnim = useRef(new Animated.Value(500)).current;
@@ -20,15 +21,23 @@ export default function HistorialPagos() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Animación de entrada
+  // Animación inicial al montar
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(cardSlideAnim, { toValue: 0, duration: 800, useNativeDriver: true }),
-      Animated.timing(fadeAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
+      Animated.timing(cardSlideAnim, {
+        toValue: 0,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 1000,
+        useNativeDriver: true,
+      }),
     ]).start();
-  }, []);
+  }, [cardSlideAnim, fadeAnim]);
 
-  // Obtener ID del usuario
+  // Obtener ID usuario
   useEffect(() => {
     const cargarUsuario = async () => {
       try {
@@ -43,73 +52,112 @@ export default function HistorialPagos() {
     cargarUsuario();
   }, []);
 
-  // Obtener historial real del backend
-  useEffect(() => {
-    if (!usuarioId) return;
-
-    const obtenerHistorial = async () => {
-      try {
-        setLoading(true);
-
-        const resp = await axios.get(
-          `https://backenddent.onrender.com/api/pagos/historial/${usuarioId}`
-        );
-
-        const data = Array.isArray(resp.data) ? resp.data : [];
-
-        // Adaptación al formato visual
-        const formateado = data.map((p) => {
-          const fechaPago = formatoFecha(p.fecha_pago);
-          const fechaCita = formatoFechaHora(p.fecha_cita);
-
-          return {
-            id: p.pago_id,
-            tratamiento: p.nombre_tratamiento || "Sin tratamiento",
-            monto: p.monto || "0",
-            metodo: p.metodo || "Sin método",
-            estado: p.estado || "Pagado",
-            fechaPago,
-            fechaCita,
-          };
-        });
-
-        setHistorial(formateado);
-      } catch (error) {
-        console.error("Error cargando historial:", error);
-        setError("No fue posible obtener el historial de pagos.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    obtenerHistorial();
-  }, [usuarioId]);
-
-  // Helpers
-  const formatoFecha = (iso: string | null) => {
-    if (!iso) return "Sin fecha";
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return "Sin fecha";
-    return `${d.getDate().toString().padStart(2, "0")}/${(d.getMonth() + 1)
-      .toString()
-      .padStart(2, "0")}/${d.getFullYear()}`;
-  };
-
+  // Helpers con AM/PM sin usar Date()
   const formatoFechaHora = (iso: string | null) => {
     if (!iso) return "Sin fecha";
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return "Sin fecha";
-    return `${d.getDate().toString().padStart(2, "0")}/${(d.getMonth() + 1)
-      .toString()
-      .padStart(2, "0")}/${d.getFullYear()} ${d
-        .getHours()
-        .toString()
-        .padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+
+    const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+    if (!match) return "Sin fecha";
+
+    const [, year, month, day, hour24, minute] = match;
+
+    let h = parseInt(hour24, 10);
+    const sufijo = h >= 12 ? "PM" : "AM";
+
+    // Convertir a 12h
+    h = h % 12;
+    if (h === 0) h = 12;
+
+    const hour12 = h.toString().padStart(2, "0");
+
+    return `${day}/${month}/${year} ${hour12}:${minute} ${sufijo}`;
   };
+
+  // Función para cargar historial (reutilizable)
+  const obtenerHistorial = useCallback(async () => {
+    if (!usuarioId) return;
+    try {
+      setLoading(true);
+      setError(null);
+
+      const resp = await axios.get(
+        `https://backenddent.onrender.com/api/pagos/historial/${usuarioId}`
+      );
+
+      const data = Array.isArray(resp.data) ? resp.data : [];
+
+      const formateado = data.map((p) => {
+        return {
+          id: p.pago_id,
+          tratamiento: p.nombre_tratamiento || "Sin tratamiento",
+          monto: p.monto || "0",
+          metodo: p.metodo || "Sin método",
+          estado: p.estado || "Pagado",
+          fechaPago: formatoFechaHora(p.fecha_pago),
+          fechaCita: formatoFechaHora(p.fecha_cita),
+        };
+      });
+
+      setHistorial(formateado);
+    } catch (error) {
+      console.error("Error cargando historial:", error);
+      setError("No fue posible obtener el historial de pagos.");
+    } finally {
+      setLoading(false);
+    }
+  }, [usuarioId]);
+
+  // Cargar historial cuando ya tenemos usuarioId
+  useEffect(() => {
+    if (usuarioId) {
+      obtenerHistorial();
+    }
+  }, [usuarioId, obtenerHistorial]);
+
+  // Reiniciar cada vez que se enfoca el tab
+  useFocusEffect(
+    useCallback(() => {
+      // Limpiar estados visuales
+      setError(null);
+      setHistorial([]);
+      setLoading(true);
+
+      // Reiniciar animaciones
+      cardSlideAnim.setValue(500);
+      fadeAnim.setValue(0);
+
+      Animated.parallel([
+        Animated.timing(cardSlideAnim, {
+          toValue: 0,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ]).start();
+
+      // Volver a consultar historial si ya tenemos usuario
+      if (usuarioId) {
+        obtenerHistorial();
+      }
+
+      return () => {
+        // No hay nada especial que limpiar por ahora
+      };
+    }, [usuarioId, obtenerHistorial, cardSlideAnim, fadeAnim])
+  );
 
   return (
     <View style={styles.container}>
-      <Animated.View style={[styles.card, { transform: [{ translateY: cardSlideAnim }], opacity: fadeAnim }]}>
+      <Animated.View
+        style={[
+          styles.card,
+          { transform: [{ translateY: cardSlideAnim }], opacity: fadeAnim },
+        ]}
+      >
         <Text style={styles.title}>Historial de Pagos</Text>
 
         {loading ? (
@@ -131,7 +179,9 @@ export default function HistorialPagos() {
                   <Text style={styles.tratamiento}>{pago.tratamiento}</Text>
                   <Text style={styles.subText}>Monto: ${pago.monto}</Text>
                   <Text style={styles.subText}>Método: {pago.metodo}</Text>
-                  <Text style={styles.subText}>Fecha de pago: {pago.fechaPago}</Text>
+                  <Text style={styles.subText}>
+                    Fecha de pago: {pago.fechaPago}
+                  </Text>
                   <Text style={styles.subText}>Cita: {pago.fechaCita}</Text>
                 </View>
 
@@ -145,7 +195,9 @@ export default function HistorialPagos() {
                 <View
                   style={[
                     styles.estadoBadge,
-                    pago.estado === "pagado" ? styles.estadoOk : styles.estadoPendiente,
+                    pago.estado === "pagado"
+                      ? styles.estadoOk
+                      : styles.estadoPendiente,
                   ]}
                 >
                   <Text style={styles.estadoText}>{pago.estado}</Text>
@@ -160,21 +212,22 @@ export default function HistorialPagos() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#EFEFEF" },
+  container: {
+    flex: 1,
+    backgroundColor: "#EFEFEF",
+  },
   card: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#fff",
     borderTopLeftRadius: 50,
     borderTopRightRadius: 50,
     padding: 20,
     paddingTop: 30,
-    marginHorizontal: 10,
-    marginTop: 10,
-    elevation: 6,
+    elevation: 3,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.2,
-    shadowRadius: 6,
+    shadowRadius: 5,
   },
   title: {
     fontSize: 24,
@@ -198,8 +251,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   textContainer: { flex: 1, marginRight: 10 },
-  tratamiento: { fontSize: 14, fontFamily: "PoppinsSemiBold", color: "#000" },
-  subText: { fontSize: 12, fontFamily: "PoppinsRegular", color: "#555" },
+  tratamiento: {
+    fontSize: 14,
+    fontFamily: "PoppinsSemiBold",
+    color: "#000",
+  },
+  subText: {
+    fontSize: 12,
+    fontFamily: "PoppinsRegular",
+    color: "#555",
+  },
   estadoBadge: {
     paddingVertical: 6,
     paddingHorizontal: 12,
@@ -207,5 +268,9 @@ const styles = StyleSheet.create({
   },
   estadoOk: { backgroundColor: "#1E88E5" },
   estadoPendiente: { backgroundColor: "#2e7d32" },
-  estadoText: { color: "#fff", fontSize: 11, fontFamily: "PoppinsSemiBold" },
+  estadoText: {
+    color: "#fff",
+    fontSize: 11,
+    fontFamily: "PoppinsSemiBold",
+  },
 });

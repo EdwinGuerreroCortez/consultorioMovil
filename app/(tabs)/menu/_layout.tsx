@@ -5,7 +5,7 @@ export default function MenuLayout() {
   return (
     <Stack
       screenOptions={{
-        headerShown: false, // 👈 oculta el encabezado
+        headerShown: false, // oculta el encabezado
       }}
     >
       {/* Pantallas del menú */}

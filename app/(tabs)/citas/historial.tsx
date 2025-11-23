@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from "react";
+import React, { useRef, useEffect, useState, useCallback } from "react";
 import {
   View,
   StyleSheet,
@@ -14,6 +14,7 @@ import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import axios from "axios";
 import { verificarSesion } from "@/services/authService"; //  obtiene usuario desde token
+import { useFocusEffect } from "@react-navigation/native";
 
 interface Cita {
   cita_id: number;
@@ -37,30 +38,16 @@ export default function HistorialCitas() {
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const [usuarioId, setUsuarioId] = useState<number | null>(null);
-  const [filtro, setFiltro] = useState<"Todas" | "Completada" | "Cancelada">("Todas");
+  const [filtro, setFiltro] = useState<"Todas" | "Completada" | "Cancelada">(
+    "Todas"
+  );
   const [fechaFiltro, setFechaFiltro] = useState<Date | null>(null);
   const [mostrarPicker, setMostrarPicker] = useState(false);
   const [citas, setCitas] = useState<CitaFormateada[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  //  Animaciones
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(cardSlideAnim, {
-        toValue: 0,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 1000,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, []);
-
-  //  Obtener ID del usuario desde token
+  // Obtener ID del usuario desde token (una sola vez)
   useEffect(() => {
     const obtenerUsuario = async () => {
       try {
@@ -78,54 +65,93 @@ export default function HistorialCitas() {
     obtenerUsuario();
   }, []);
 
-  // 🔹 Cargar citas desde la API
-  useEffect(() => {
+  // Función para cargar citas desde la API (reutilizable)
+  const obtenerCitas = useCallback(async () => {
     if (!usuarioId) return;
 
-    const obtenerCitas = async () => {
-      try {
-        setLoading(true);
-        const resp = await axios.get<Cita[]>(
-          `https://backenddent.onrender.com/api/citas/historial/${usuarioId}`
-        );
+    try {
+      setLoading(true);
+      setError(null);
 
-        const citasFormateadas: CitaFormateada[] = resp.data
-          .filter((c) =>
-            ["completada", "cancelado"].includes(c.estado_cita.toLowerCase())
-          )
-          .map((c) => {
-            const fecha = new Date(c.fecha_hora);
-            const dia = fecha.getDate().toString().padStart(2, "0");
-            const mes = (fecha.getMonth() + 1).toString().padStart(2, "0");
-            const anio = fecha.getFullYear();
-            const hora = fecha.getHours().toString().padStart(2, "0");
-            const min = fecha.getMinutes().toString().padStart(2, "0");
+      const resp = await axios.get<Cita[]>(
+        `https://backenddent.onrender.com/api/citas/historial/${usuarioId}`
+      );
 
-            return {
-              id: c.cita_id.toString(),
-              fecha: `${dia}/${mes}/${anio}`,
-              hora: `${hora}:${min}`,
-              tratamiento: c.tratamiento.trim(),
-              estado:
-                c.estado_cita.toLowerCase() === "completada"
-                  ? "Completada"
-                  : "Cancelada",
-            };
-          });
+      const citasFormateadas: CitaFormateada[] = resp.data
+        .filter((c) =>
+          ["completada", "cancelado"].includes(c.estado_cita.toLowerCase())
+        )
+        .map((c) => {
+          const fecha = new Date(c.fecha_hora);
+          const dia = fecha.getDate().toString().padStart(2, "0");
+          const mes = (fecha.getMonth() + 1).toString().padStart(2, "0");
+          const anio = fecha.getFullYear();
+          const hora = fecha.getHours().toString().padStart(2, "0");
+          const min = fecha.getMinutes().toString().padStart(2, "0");
 
-        setCitas(citasFormateadas);
-      } catch (err) {
-        console.error("Error al obtener historial:", err);
-        setError("No fue posible cargar el historial de citas");
-      } finally {
-        setLoading(false);
-      }
-    };
+          return {
+            id: c.cita_id.toString(),
+            fecha: `${dia}/${mes}/${anio}`,
+            hora: `${hora}:${min}`,
+            tratamiento: c.tratamiento.trim(),
+            estado:
+              c.estado_cita.toLowerCase() === "completada"
+                ? "Completada"
+                : "Cancelada",
+          };
+        });
 
-    obtenerCitas();
+      setCitas(citasFormateadas);
+    } catch (err) {
+      console.error("Error al obtener historial:", err);
+      setError("No fue posible cargar el historial de citas");
+    } finally {
+      setLoading(false);
+    }
   }, [usuarioId]);
 
-  //  Filtrado por estado y fecha
+  // Carga inicial cuando ya tenemos usuario
+  useEffect(() => {
+    if (!usuarioId) return;
+    obtenerCitas();
+  }, [usuarioId, obtenerCitas]);
+
+  // Reiniciar y recargar cada vez que se enfoca el tab
+  useFocusEffect(
+    useCallback(() => {
+      // 1) Reset de filtros y errores
+      setFiltro("Todas");
+      setFechaFiltro(null);
+      setMostrarPicker(false);
+      setError(null);
+
+      // 2) Reiniciar animaciones
+      cardSlideAnim.setValue(500);
+      fadeAnim.setValue(0);
+
+      Animated.parallel([
+        Animated.timing(cardSlideAnim, {
+          toValue: 0,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ]).start();
+
+      // 3) Volver a consultar las citas
+      obtenerCitas();
+
+      return () => {
+        // aquí podrías cancelar timers o peticiones si algún día las agregas
+      };
+    }, [cardSlideAnim, fadeAnim, obtenerCitas])
+  );
+
+  // Filtrado por estado y fecha
   const parseFecha = (fecha: string) => {
     const [dia, mes, anio] = fecha.split("/").map(Number);
     return new Date(anio, mes - 1, dia);
@@ -172,13 +198,15 @@ export default function HistorialCitas() {
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#2196F3" />
-            <Text style={{ color: "#555", marginTop: 8 }}>Cargando citas...</Text>
+            <Text style={{ color: "#555", marginTop: 8 }}>
+              Cargando citas...
+            </Text>
           </View>
         ) : error ? (
           <Text style={{ color: "red", textAlign: "center" }}>{error}</Text>
         ) : (
           <>
-            {/* 🔹 Filtros */}
+            {/* Filtros por estado */}
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -204,7 +232,7 @@ export default function HistorialCitas() {
               ))}
             </ScrollView>
 
-            {/* 🔹 Filtro de fechas */}
+            {/* Filtro de fechas */}
             <View style={styles.fechaFiltroContainer}>
               <Text style={styles.fechaFiltroLabel}>Filtros</Text>
               <Chip
@@ -240,7 +268,7 @@ export default function HistorialCitas() {
               />
             )}
 
-            {/* 🔹 Tabla */}
+            {/* Tabla */}
             <ScrollView horizontal showsHorizontalScrollIndicator={true}>
               <View>
                 <View style={styles.tableHeader}>
@@ -253,7 +281,11 @@ export default function HistorialCitas() {
                     Hora
                   </Text>
                   <Text
-                    style={[styles.cell, styles.header, styles.tratamientoCell]}
+                    style={[
+                      styles.cell,
+                      styles.header,
+                      styles.tratamientoCell,
+                    ]}
                   >
                     Tratamiento
                   </Text>

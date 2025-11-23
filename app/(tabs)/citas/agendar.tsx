@@ -12,6 +12,7 @@ import {
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { verificarSesion } from "@/services/authService";
 import { useApi } from "@/hooks/useApi";
+import { useFocusEffect } from "@react-navigation/native";
 
 const WEEKDAY_HOURS = [
   "09:00",
@@ -124,21 +125,49 @@ export default function AgendarCita() {
       setLoading(false);
     }
   }, [fetchWithCsrf]);
-  // Animaciones
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(cardSlideAnim, {
-        toValue: 0,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 1000,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, []);
+  // Reiniciar pantalla cada vez que se enfoca el tab
+  useFocusEffect(
+    useCallback(() => {
+      // 1) Reiniciar estados de selección
+      setSelectedService(null);
+      setServiceDropdownOpen(false);
+      setSelectedDate(null);
+      setSelectedHour(null);
+      setCitasOcupadas([]);
+      ultimaFechaConsultada.current = null;
+
+      // (Opcional) Reiniciar el mes al actual
+      const hoy = new Date();
+      hoy.setDate(1);
+      setCurrentMonth(hoy);
+
+      // 2) Volver a consultar al backend
+      verificarTratamientoActivo();
+      obtenerTratamientos();
+
+      // 3) Reiniciar animaciones
+      cardSlideAnim.setValue(500);
+      fadeAnim.setValue(0);
+
+      Animated.parallel([
+        Animated.timing(cardSlideAnim, {
+          toValue: 0,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ]).start();
+
+      return () => {
+        // aquí podrías limpiar timers/listeners si algún día los agregas
+      };
+    }, [cardSlideAnim, fadeAnim, verificarTratamientoActivo, obtenerTratamientos])
+  );
+
 
   // Obtener usuario desde token
   useEffect(() => {
