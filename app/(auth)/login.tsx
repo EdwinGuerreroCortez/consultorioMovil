@@ -1,8 +1,15 @@
+// app/(auth)/login.tsx  (o donde tengas tu pantalla de login)
+
 import React, { useEffect, useRef, useState } from "react";
 import { View, StyleSheet, Image, Animated, Text } from "react-native";
 import { Link, useRouter } from "expo-router";
-import { TextInput, Button, Snackbar } from "react-native-paper"; //  Snackbar
+import { TextInput, Button, Snackbar } from "react-native-paper";
 import { guardarToken, verificarSesion } from "@/services/authService";
+
+import * as WebBrowser from "expo-web-browser";
+import * as Google from "expo-auth-session/providers/google";
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -20,10 +27,22 @@ export default function LoginScreen() {
   const [emailError, setEmailError] = useState("");
   const [passwordError, setPasswordError] = useState("");
 
-  // Snackbar (alertas bonitas)
+  // Snackbar
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState("");
   const [snackbarColor, setSnackbarColor] = useState("#333");
+
+  // Google
+  const [loadingGoogle, setLoadingGoogle] = useState(false);
+
+  // ⚠️ IMPORTANTE: expoClientId para Expo Go, androidClientId para APK
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    expoClientId:
+      "1031243738046-j91te9093iehmlamfm4sipghk2dn80qt.apps.googleusercontent.com",
+    androidClientId:
+      "1031243738046-kud901kc7d15ilcnqopvrm0mfq7fkv3r.apps.googleusercontent.com",
+    scopes: ["profile", "email"],
+  });
 
   useEffect(() => {
     Animated.parallel([
@@ -40,7 +59,7 @@ export default function LoginScreen() {
     ]).start();
   }, []);
 
-  // Validación de correo
+  // Validación email
   const validateEmail = (text: string) => {
     setEmail(text);
     const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -53,7 +72,7 @@ export default function LoginScreen() {
     }
   };
 
-  // Validación de contraseña
+  // Validación contraseña
   const validatePassword = (text: string) => {
     setPassword(text);
     if (!text) {
@@ -65,33 +84,36 @@ export default function LoginScreen() {
     }
   };
 
-  // 🔹 Mostrar alerta
   const showSnackbar = (message: string, color: string = "#333") => {
     setSnackbarMessage(message);
     setSnackbarColor(color);
     setSnackbarVisible(true);
   };
 
-  // 🔹 Lógica de login
+  // Login normal (correo / contraseña)
   const handleLogin = async () => {
     if (!email) setEmailError("El correo es obligatorio.");
     if (!password) setPasswordError("La contraseña es obligatoria.");
     if (emailError || passwordError || !email || !password) return;
 
     try {
-      const resp = await fetch("https://backenddent.onrender.com/api/usuarios/login-movil", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
+      const resp = await fetch(
+        "https://backenddent.onrender.com/api/usuarios/login-movil",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        }
+      );
 
       if (!resp.ok) {
-        const err = await resp.json();
-        showSnackbar(err.mensaje || "Credenciales inválidas", "#D32F2F"); // Error
+        const err = await resp.json().catch(() => ({}));
+        showSnackbar(err.mensaje || "Credenciales inválidas", "#D32F2F");
         return;
       }
 
       const data = await resp.json();
+
       if (!data.token) {
         showSnackbar("El servidor no devolvió token", "#D32F2F");
         return;
@@ -101,10 +123,10 @@ export default function LoginScreen() {
 
       const usuario = await verificarSesion();
       if (usuario) {
-        showSnackbar("Inicio de sesión exitoso", "#2E7D32"); //  Éxito
+        showSnackbar("Inicio de sesión exitoso", "#2E7D32");
         setTimeout(() => {
           router.replace("/(tabs)");
-        }, 1200); // Espera un poco para mostrar el mensaje
+        }, 1200);
       } else {
         showSnackbar("No se pudo verificar la sesión", "#D32F2F");
       }
@@ -113,6 +135,93 @@ export default function LoginScreen() {
       showSnackbar("No se pudo conectar con el servidor", "#D32F2F");
     }
   };
+
+  // Login con Google
+  useEffect(() => {
+    const manejarRespuestaGoogle = async () => {
+      if (!response || response.type !== "success") return;
+
+      try {
+        setLoadingGoogle(true);
+
+        const accessToken = response.authentication?.accessToken;
+        if (!accessToken) {
+          showSnackbar("No se obtuvo el token de Google", "#D32F2F");
+          return;
+        }
+
+        // Obtener datos básicos del usuario desde Google
+        const userInfoResp = await fetch(
+          "https://www.googleapis.com/userinfo/v2/me",
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          }
+        );
+
+        if (!userInfoResp.ok) {
+          showSnackbar(
+            "No se pudo obtener la información de Google",
+            "#D32F2F"
+          );
+          return;
+        }
+
+        const userInfo = await userInfoResp.json();
+
+        // Llamar a tu backend
+        const resp = await fetch(
+          "https://backenddent.onrender.com/api/usuarios/login-google-movil",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: userInfo.email,
+              nombreCompleto: userInfo.name,
+            }),
+          }
+        );
+
+        const data = await resp.json().catch(() => ({}));
+
+        if (!resp.ok) {
+          showSnackbar(
+            data.mensaje || "No se pudo iniciar sesión con Google",
+            "#D32F2F"
+          );
+          return;
+        }
+
+        if (!data.token) {
+          showSnackbar("El servidor no devolvió token", "#D32F2F");
+          return;
+        }
+
+        await guardarToken(data.token);
+
+        const usuario = await verificarSesion();
+        if (usuario) {
+          showSnackbar("Inicio de sesión con Google exitoso", "#2E7D32");
+          setTimeout(() => {
+            router.replace("/(tabs)");
+          }, 1200);
+        } else {
+          showSnackbar("No se pudo verificar la sesión", "#D32F2F");
+        }
+      } catch (error) {
+        console.error("Error Google login:", error);
+        showSnackbar(
+          "Ocurrió un error al iniciar sesión con Google",
+          "#D32F2F"
+        );
+      } finally {
+        setLoadingGoogle(false);
+      }
+    };
+
+    manejarRespuestaGoogle();
+  }, [response]);
 
   return (
     <View style={styles.container}>
@@ -197,7 +306,7 @@ export default function LoginScreen() {
           ) : null}
         </Animated.View>
 
-        {/* Botón */}
+        {/* Botón correo/contraseña */}
         <Animated.View style={{ opacity: fadeAnim, width: "100%" }}>
           <Button
             mode="contained"
@@ -205,11 +314,38 @@ export default function LoginScreen() {
             style={styles.button}
             labelStyle={styles.buttonText}
           >
-            Iniciar Sesión
+            The Iniciar Sesión
           </Button>
         </Animated.View>
 
-        {/* Links centrados */}
+        {/* Botón Google */}
+        <Animated.View style={{ opacity: fadeAnim, width: "100%" }}>
+          <Button
+            mode="outlined"
+            onPress={() => {
+              if (!request) {
+                showSnackbar(
+                  "Google aún no está listo, intenta de nuevo.",
+                  "#D32F2F"
+                );
+                return;
+              }
+              promptAsync();
+            }}
+            style={[
+              styles.button,
+              { backgroundColor: "#fff", borderColor: "#4285F4" },
+            ]}
+            labelStyle={[styles.buttonText, { color: "#4285F4" }]}
+            disabled={loadingGoogle}
+          >
+            {loadingGoogle
+              ? "Conectando con Google..."
+              : "Continuar con Google"}
+          </Button>
+        </Animated.View>
+
+        {/* Links */}
         <Animated.View style={[{ opacity: fadeAnim }, styles.linksContainer]}>
           <Link href="/(auth)/recuperar" style={styles.link}>
             ¿Olvidaste tu contraseña?
@@ -228,7 +364,7 @@ export default function LoginScreen() {
         style={{ backgroundColor: snackbarColor }}
         action={{
           label: "OK",
-          textColor: "#fff", // botón en blanco
+          textColor: "#fff",
           onPress: () => setSnackbarVisible(false),
         }}
       >
@@ -236,7 +372,6 @@ export default function LoginScreen() {
           {snackbarMessage}
         </Text>
       </Snackbar>
-
     </View>
   );
 }
@@ -289,7 +424,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
   },
   button: {
-    marginVertical: 15,
+    marginVertical: 8,
     borderRadius: 12,
     backgroundColor: "#002BFF",
     height: 60,
